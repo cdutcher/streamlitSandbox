@@ -1,3 +1,8 @@
-streamlit==1.31.0
+streamlit
 numpy
-pandas 
+pandas
+streamlit-authenticator==0.2.3
+pyyaml
+psycopg2-binary
+sqlalchemy
+python-dotenv 
