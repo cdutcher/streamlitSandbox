@@ -1,9 +1,9 @@
-from sqlalchemy import create_engine, Column, String, DateTime
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 import streamlit as st
 import streamlit_authenticator as stauth
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Create base class for declarative models
 Base = declarative_base()
@@ -16,6 +16,22 @@ class User(Base):
     name = Column(String)
     password = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    flashcards = relationship("Flashcard", back_populates="user")
+
+class Flashcard(Base):
+    __tablename__ = 'flashcards'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, ForeignKey('users.username'))
+    question = Column(String)
+    answer = Column(String)
+    box_number = Column(Integer, default=1)  # Leitner box number (1-5)
+    next_review = Column(DateTime)
+    last_difficulty = Column(String)  # easy, medium, hard
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="flashcards")
 
 class UserDB:
     def __init__(self):
@@ -86,6 +102,43 @@ class UserDB:
         existing_user = self.get_user(username)
         if existing_user:
             raise ValueError("Username already exists")
+    
+    def save_flashcard_result(self, username, question, answer, is_correct, difficulty):
+        card = self.session.query(Flashcard).filter(
+            Flashcard.user_id == username,
+            Flashcard.question == question
+        ).first()
+        
+        if not card:
+            card = Flashcard(
+                user_id=username,
+                question=question,
+                answer=answer,
+                box_number=1  # Initialize box_number for new cards
+            )
+            self.session.add(card)
+        
+        # Update box number based on Leitner system
+        if is_correct:
+            if difficulty == "easy":
+                card.box_number = min(5, card.box_number + 1)
+            elif difficulty == "medium":
+                card.box_number = min(5, card.box_number)
+        else:
+            card.box_number = max(1, card.box_number - 1)
+        
+        # Set next review date based on box number
+        intervals = {
+            1: timedelta(days=1),
+            2: timedelta(days=3),
+            3: timedelta(days=7),
+            4: timedelta(days=14),
+            5: timedelta(days=30)
+        }
+        card.next_review = datetime.utcnow() + intervals[card.box_number]
+        card.last_difficulty = difficulty
+        
+        self.session.commit()
     
     def __del__(self):
         # Close session when object is destroyed
