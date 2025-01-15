@@ -23,4 +23,4 @@ fastReruns = true
 level = "error"
 
 [app]
-flashcards_per_session = 3 
+flashcards_per_session = 2
