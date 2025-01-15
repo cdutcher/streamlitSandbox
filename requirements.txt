@@ -7,4 +7,6 @@ psycopg2-binary
 sqlalchemy
 python-dotenv
 pytest
-pytest-postgresql 
+pytest-postgresql
+watchdog 
+anthropic 
