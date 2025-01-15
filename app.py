@@ -68,6 +68,15 @@ elif authentication_status:
     # Add debug toggle in sidebar
     debug_mode = st.sidebar.checkbox("Debug Mode", value=True)
     
+    def load_config():
+        try:
+            config = st.config.get_option('app')
+        except:
+            config = {'flashcards_per_session': 3}  # Default if not in config
+        st.session_state['config'] = config
+    
+    load_config()
+    
     class FlashcardApp:
         def __init__(self):
             self.db = UserDB()
@@ -82,19 +91,36 @@ elif authentication_status:
                     'show_answer': False,
                     'user_answer': "",
                     'feedback': None,
-                    'difficulty': None
+                    'difficulty': None,
+                    'session_results': []
                 })
         
         def handle_card_completion(self, difficulty, is_correct):
             current_card = st.session_state.current_cards[st.session_state.current_index]
+            
+            # Save result to session
+            st.session_state.session_results.append({
+                'question': current_card['question'],
+                'correct_answer': current_card['answer'],
+                'user_answer': st.session_state.user_answer,
+                'correct': is_correct,
+                'difficulty': difficulty
+            })
+            
+            # Save to database
             self.db.save_flashcard_result(
-                username=st.session_state.username,
+                username=username,
                 question=current_card['question'],
                 answer=current_card['answer'],
                 is_correct=is_correct,
                 difficulty=difficulty
             )
-            self.next_card()
+            
+            # Check if session is complete
+            if len(st.session_state.session_results) >= len(st.session_state.current_cards):
+                show_study_session_summary(st.session_state.session_results)
+            else:
+                self.next_card()
         
         def next_card(self):
             st.session_state.current_index += 1
@@ -110,8 +136,11 @@ elif authentication_status:
         
         def run(self):
             with st.form(key='flashcard_form'):
-                topic = st.text_input("Enter a topic:", value="Amino acids")
-                if st.form_submit_button("Generate Flashcards"):
+                topic = st.text_input("Enter a topic:", 
+                                    value="Amino acids",
+                                    disabled=st.session_state.get('form_disabled', False))
+                submit_disabled = st.session_state.get('form_disabled', False)
+                if st.form_submit_button("Generate Flashcards", disabled=submit_disabled):
                     self.generate_flashcards(topic)
             
             if st.session_state.current_cards:
@@ -185,8 +214,6 @@ elif authentication_status:
                 }
                 feedback_response = self.claude.create_feedback(feedback_prompt)
                 try:
-                    if st.session_state.get('debug_mode', False):
-                        st.write("Raw feedback:", feedback_response)
                     cleaned_response = self.clean_and_parse_json(feedback_response)
                     st.session_state.update({
                         'user_answer': user_answer,
@@ -194,9 +221,9 @@ elif authentication_status:
                         'feedback': cleaned_response
                     })
                 except Exception as e:
-                    if st.session_state.get('debug_mode', False):
-                        st.error(f"Failed to parse feedback: {str(e)}")
-                        st.write("Raw feedback:", feedback_response)
+                    st.error(f"Failed to parse feedback: {str(e)}")
+                    st.error("Raw response:")
+                    st.code(feedback_response)
                     st.session_state.update({
                         'user_answer': user_answer,
                         'show_answer': True,
@@ -208,14 +235,21 @@ elif authentication_status:
                 st.rerun()
 
         def show_answer_and_feedback(self, current_card):
-            is_correct = show_feedback(current_card['answer'], st.session_state.user_answer, st.session_state.feedback)
+            is_correct = show_feedback(current_card['answer'], 
+                                     st.session_state.user_answer, 
+                                     st.session_state.feedback)
+            
+            is_last_card = len(st.session_state.session_results) >= len(st.session_state.current_cards) - 1
+            
             if is_correct:
-                clicked = show_difficulty_buttons()
+                clicked = show_difficulty_buttons(disabled=False)  # Never disable difficulty buttons
                 if any(clicked.values()):
                     difficulty = next(k for k, v in clicked.items() if v)
                     self.handle_card_completion(difficulty, is_correct)
             else:
-                if show_next_button():
+                # Show "Summary" button for last card, otherwise "Next Card"
+                button_text = "Show Summary" if is_last_card else "Next Card"
+                if show_next_button(text=button_text, disabled=False):
                     self.handle_card_completion("hard", is_correct)
 
     # Initialize and run app

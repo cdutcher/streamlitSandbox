@@ -20,4 +20,7 @@ showErrorDetails = false
 fastReruns = true
 
 [logger]
-level = "error" 
+level = "error"
+
+[app]
+flashcards_per_session = 3 

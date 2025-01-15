@@ -4,21 +4,26 @@ import streamlit as st
 class ClaudeService:
     def __init__(self):
         self.client = Anthropic(api_key=st.secrets["anthropic_api_key"])
+        # Get config or use default
+        self.cards_per_session = st.session_state.get('config', {}).get('flashcards_per_session', 3)
     
     def create_flashcards(self, topic):
-        prompt = f"""Generate 10 flashcards about {topic}.
+        # Create example cards based on count
+        example_cards = [
+            '{{"question":"What is X?","answer":"X is Y"}}',
+            '{{"question":"How does Z work?","answer":"Z works by W"}}',
+            '{{"question":"Define A?","answer":"A is B"}}'
+        ][:self.cards_per_session]
+        
+        prompt = f"""Generate {self.cards_per_session} flashcards about {topic}.
         You MUST respond with ONLY a JSON array in this EXACT format:
         [
-            {{"question":"What is X?","answer":"X is Y"}},
-            {{"question":"How does Z work?","answer":"Z works by W"}},
-            {{"question":"Define A?","answer":"A is B"}},
-            {{"question":"Explain C?","answer":"C means D"}},
-            {{"question":"Why is E important?","answer":"E matters because F"}}
+            {",".join(example_cards)}
         ]
 
         Critical requirements:
         - EXACT format: no spaces after colons, no newlines
-        - EXACTLY 10 flashcards
+        - EXACTLY {self.cards_per_session} flashcards
         - NO extra text before or after the JSON
         - NO TextBlock wrapper
         - NO escaped quotes
@@ -41,39 +46,37 @@ class ClaudeService:
 
     def create_feedback(self, prompt):
         evaluation_prompt = f"""Evaluate if this answer is correct.
-        You MUST respond with ONLY a JSON object in this EXACT format, with NO other text:
-        {{"correct":true,"explanation":"Correct because..."}}
-        or
+        You MUST respond with ONLY a minified JSON object in this EXACT format:
         {{"correct":false,"explanation":"Incorrect because..."}}
 
+        Example responses:
+        {{"correct":true,"explanation":"Correct! The answer demonstrates understanding of the key concepts."}}
+        {{"correct":false,"explanation":"Incorrect. The answer is missing key information about..."}}
+
         Critical requirements:
-        - EXACT format shown above
-        - NO spaces after colons
-        - NO newlines in output
+        - Output MUST be a single line of minified JSON
+        - NO whitespace after colons or between properties
+        - NO line breaks or extra spaces
         - NO TextBlock wrapper
         - NO escaped quotes
-        - Single quotes are NOT allowed
-        - Explanation must be clear but brief
-        - ONLY output the JSON object
-        - NO additional text or formatting
-        - NO markdown
-        - NO line breaks
+        - NO markdown or formatting
+        - NO additional text before or after JSON
 
         Question: {prompt['question']}
         Correct answer: {prompt['answer']}
         User answer: {prompt['user_answer']}
 
-        Compare meaning, not exact wording. User answer is correct if core concepts match.
+        Compare meaning and key concepts, not exact wording.
         """
         
-        message = self.client.messages.create(
+        response = self.client.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=150,
-            temperature=0.3,
-            system="You are a JSON generator. ONLY output valid, minified JSON objects with NO extra text or formatting.",
+            temperature=0.1,  # Lower temperature for more consistent formatting
+            system="You are a JSON generator. Output ONLY minified, single-line JSON objects with no extra text.",
             messages=[{
                 "role": "user",
                 "content": evaluation_prompt
             }]
         )
-        return message.content 
+        return response.content  # Claude API returns content directly 
